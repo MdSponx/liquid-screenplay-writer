@@ -325,9 +325,9 @@ const BlockComponentImproved: React.FC<ExtendedBlockComponentProps> = ({
     }
   }, [showSuggestions, onKeyDown, block.id, updateSuggestionsPosition, isProcessingSelection]);
 
-  // Enhanced input handling
-  const handleInput = useCallback(() => {
-    const content = contentElement?.textContent || '';
+  // Enhanced input handling - Fixed to use event target directly
+  const handleInput = useCallback((e: React.FormEvent<HTMLDivElement>) => {
+    const content = e.currentTarget.textContent || '';
     setCurrentInput(content);
     
     // Don't open suggestions if just closed
@@ -352,7 +352,7 @@ const BlockComponentImproved: React.FC<ExtendedBlockComponentProps> = ({
     } else {
       setShowSuggestions(false);
     }
-  }, [contentElement, block.type, updateSuggestionsPosition]);
+  }, [block.type, updateSuggestionsPosition]);
 
   // Enhanced blur handling
   const handleBlur = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
