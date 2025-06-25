@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LiQid - Script Writing Tool</title>
+    <link href="https://fonts.googleapis.com/css2?family=Mukta+Mahee:wght@200;700&family=Kanit:wght@700&family=Noto+Sans+SC:wght@900&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+    
+    <!-- StackBlitz-specific styles - only load in StackBlitz environment -->
+    <script>
+      if (window.location.host.includes('stackblitz.io')) {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = '/stackblitz.css';
+        document.head.appendChild(link);
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <!-- StackBlitz specific scripts - only load in StackBlitz environment -->
+    <script>
+      if (window.location.host.includes('stackblitz.io')) {
+        // Load the StackBlitz initialization script
+        const script = document.createElement('script');
+        script.src = '/stackblitz.js';
+        document.body.appendChild(script);
+        
+        // Load the StackBlitz entry point
+        const entryScript = document.createElement('script');
+        entryScript.type = 'module';
+        entryScript.src = '/stackblitz-entry.js';
+        document.body.appendChild(entryScript);
+        
+        // Set a global flag to indicate we're in StackBlitz
+        window.STACKBLITZ = true;
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,61 @@
+/* StackBlitz-specific styles */
+
+/* Add a StackBlitz badge to the top-right corner of the app */
+body::before {
+  content: 'StackBlitz';
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  background-color: #1389fd;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  z-index: 9999;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+}
+
+body::before:hover {
+  opacity: 1;
+}
+
+/* Optimize layout for StackBlitz's smaller viewport */
+@media (max-width: 768px) {
+  /* Make the sidebar narrower */
+  .sidebar {
+    width: 200px !important;
+  }
+  
+  /* Reduce padding in the main content area */
+  .main-content {
+    padding: 10px !important;
+  }
+  
+  /* Make fonts slightly smaller */
+  body {
+    font-size: 14px !important;
+  }
+  
+  /* Adjust button sizes */
+  button {
+    padding: 6px 12px !important;
+  }
+}
+
+/* Fix for Firebase UI in StackBlitz */
+.firebaseui-container {
+  max-width: 100% !important;
+}
+
+/* Fix for modal dialogs in StackBlitz */
+.modal-dialog {
+  max-width: 90% !important;
+  margin: 20px auto !important;
+}
+
+/* Fix for editor in StackBlitz */
+.editor-container {
+  max-height: 80vh !important;
+}

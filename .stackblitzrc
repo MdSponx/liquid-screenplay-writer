@@ -1,0 +1,8 @@
+{
+  "installDependencies": true,
+  "startCommand": "npm run dev",
+  "env": {
+    "STACKBLITZ": "true",
+    "NODE_ENV": "development"
+  }
+}

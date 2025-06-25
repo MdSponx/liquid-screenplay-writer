@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isProjectMember(projectId) {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/project_members/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/projects/$(projectId)).data.created_by == request.auth.uid
+      );
+    }
+    
+    function isProjectOwner(projectId) {
+      let project = get(/databases/$(database)/documents/projects/$(projectId));
+      return project != null && project.data.created_by == request.auth.uid;
+    }
+
+    // Allow users to read and write their own profile data
+    match /profiles/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Allow users to read and write their own data
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Project rules
+    match /projects/{projectId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && resource.data.created_by == request.auth.uid;
+      
+      // Allow access to all project-related collections
+      match /{document=**} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    // Project members rules
+    match /project_members/{memberId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Screenplay rules
+    match /screenplays/{screenplayId} {
+      allow read, write: if isSignedIn();
+      
+      // Allow access to all screenplay subcollections
+      match /{document=**} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    // Scene rules
+    match /scenes/{sceneId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Scene locks
+    match /scene_locks/{lockId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Cursor positions
+    match /cursor_positions/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Organization rules
+    match /organizations/{organizationId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && resource.data.created_by == request.auth.uid;
+    }
+
+    // Organization members rules
+    match /org_members/{memberId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (
+        get(/databases/$(database)/documents/organizations/$(resource.data.organization_id)).data.created_by == request.auth.uid
+      );
+    }
+
+    // Account settings
+    match /account_settings/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+  }
+}
