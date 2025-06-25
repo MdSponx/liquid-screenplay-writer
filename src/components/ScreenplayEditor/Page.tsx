@@ -1,5 +1,5 @@
 import React from 'react';
-import BlockComponent from '../BlockComponent';
+import BlockComponentImproved from '../BlockComponentImproved';
 import PageHeader from './PageHeader';
 import { CharacterDocument, ElementDocument, UniqueSceneHeadingDocument } from '../../types';
 
@@ -34,6 +34,9 @@ interface PageProps {
   projectId?: string;
   screenplayId?: string;
   projectUniqueSceneHeadings?: UniqueSceneHeadingDocument[];
+  onEnterAction?: () => void;
+  isProcessingSuggestion?: boolean;
+  setIsProcessingSuggestion?: (processing: boolean) => void;
 }
 
 const Page: React.FC<PageProps> = ({
@@ -58,6 +61,9 @@ const Page: React.FC<PageProps> = ({
   projectId,
   screenplayId,
   projectUniqueSceneHeadings = [],
+  onEnterAction,
+  isProcessingSuggestion,
+  setIsProcessingSuggestion,
 }) => {
   return (
     <div
@@ -89,7 +95,7 @@ const Page: React.FC<PageProps> = ({
         data-screenplay-content="true"
       >
         {blocks.map((block) => (
-          <BlockComponent
+          <BlockComponentImproved
             key={block.id}
             block={block}
             isDarkMode={isDarkMode}
@@ -107,6 +113,9 @@ const Page: React.FC<PageProps> = ({
             projectId={projectId}
             screenplayId={screenplayId}
             projectUniqueSceneHeadings={projectUniqueSceneHeadings}
+            onEnterAction={onEnterAction}
+            isProcessingSuggestion={isProcessingSuggestion}
+            setIsProcessingSuggestion={setIsProcessingSuggestion}
           />
         ))}
       </div>

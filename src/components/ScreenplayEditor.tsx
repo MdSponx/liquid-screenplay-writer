@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useEditorState } from '../hooks/useEditorState';
-import { useBlockHandlers } from '../hooks/useBlockHandlers';
+import { useBlockHandlersImproved } from '../hooks/useBlockHandlersImproved';
 import { useAutoScroll } from '../hooks/useAutoScroll';
 import { useScreenplaySave } from '../hooks/useScreenplaySave';
 import { useCharacterTracking } from '../hooks/useCharacterTracking';
+import { useSceneHeadings } from '../hooks/useSceneHeadings';
 import { organizeBlocksIntoPages } from '../utils/blockUtils';
 import { doc, getDoc, setDoc, collection, getDocs, query, orderBy, where, updateDoc, limit, Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { v4 as uuidv4 } from 'uuid';
-import BlockComponent from './BlockComponent';
+import BlockComponentImproved from './BlockComponentImproved';
 import FormatButtons from './ScreenplayEditor/FormatButtons';
 import Page from './ScreenplayEditor/Page';
 import { useHotkeys } from '../hooks/useHotkeys';
@@ -29,7 +30,7 @@ const ScreenplayEditor: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [characters, setCharacters] = useState<CharacterDocument[]>([]);
-  const [uniqueSceneHeadings, setUniqueSceneHeadings] = useState<UniqueSceneHeadingDocument[]>([]);
+  const [isProcessingSuggestion, setIsProcessingSuggestion] = useState(false);
 
   const screenplayData = location.state?.screenplayData;
   const initialBlocks = location.state?.blocks || [];
@@ -68,33 +69,24 @@ const ScreenplayEditor: React.FC = () => {
     userId: user?.id || ''
   });
 
+  // Initialize centralized scene headings management
+  const {
+    sceneHeadings: uniqueSceneHeadings,
+    loading: sceneHeadingsLoading,
+    error: sceneHeadingsError,
+    refreshCache: refreshSceneHeadings
+  } = useSceneHeadings({
+    projectId,
+    screenplayId,
+    enabled: !!projectId && !!screenplayId
+  });
+
   // Update characters state when trackedCharacters changes
   useEffect(() => {
     if (trackedCharacters.length > 0) {
       setCharacters(trackedCharacters);
     }
   }, [trackedCharacters]);
-
-  // Fetch unique scene headings
-  const fetchUniqueSceneHeadings = useCallback(async () => {
-    if (!projectId) return;
-    
-    try {
-      const sceneHeadingsRef = collection(db, `projects/${projectId}/unique_scene_headings`);
-      const sceneHeadingsQuery = query(sceneHeadingsRef, orderBy('count', 'desc'), limit(20));
-      const snapshot = await getDocs(sceneHeadingsQuery);
-      
-      const headings = snapshot.docs.map(doc => doc.data() as UniqueSceneHeadingDocument);
-      setUniqueSceneHeadings(headings);
-      console.log(`Loaded ${headings.length} unique scene headings`);
-    } catch (err) {
-      console.error('Error fetching unique scene headings:', err);
-    }
-  }, [projectId]);
-
-  useEffect(() => {
-    fetchUniqueSceneHeadings();
-  }, [projectId, fetchUniqueSceneHeadings]);
 
   const updateEditorState = useCallback(async () => {
     if (!projectId || !screenplayId || !user?.id) {
@@ -145,6 +137,37 @@ const ScreenplayEditor: React.FC = () => {
     }
   }, [setState]);
 
+  // Create a wrapper function that matches the expected signature
+  const onSceneHeadingUpdate = useCallback(async () => {
+    await refreshSceneHeadings();
+  }, [refreshSceneHeadings]);
+
+  // Create action block after scene heading completion
+  const createActionBlockAfterSceneHeading = useCallback(() => {
+    if (!state.activeBlock) return;
+    
+    const currentIndex = state.blocks.findIndex(b => b.id === state.activeBlock);
+    if (currentIndex === -1) return;
+
+    const actionBlockId = `action-${uuidv4()}`;
+    const actionBlock = {
+      id: actionBlockId,
+      type: 'action',
+      content: '',
+    };
+
+    const updatedBlocks = [...state.blocks];
+    updatedBlocks.splice(currentIndex + 1, 0, actionBlock);
+    
+    updateBlocks(updatedBlocks);
+    setHasChanges(true);
+
+    // Set the active block state immediately
+    setState(prev => ({ ...prev, activeBlock: actionBlockId }));
+    
+    console.log(`Action block created and set as active: ${actionBlockId}`);
+  }, [state.activeBlock, state.blocks, updateBlocks, setHasChanges, setState]);
+
   const {
     handleContentChange,
     handleEnterKey,
@@ -153,7 +176,7 @@ const ScreenplayEditor: React.FC = () => {
     handleBlockDoubleClick,
     handleFormatChange,
     handleMouseDown,
-  } = useBlockHandlers(
+  } = useBlockHandlersImproved(
     {
       blocks: state.blocks,
       activeBlock: state.activeBlock,
@@ -167,7 +190,7 @@ const ScreenplayEditor: React.FC = () => {
     setHasChanges,
     projectId,
     screenplayId,
-    fetchUniqueSceneHeadings
+    onSceneHeadingUpdate
   );
 
   useAutoScroll(state.activeBlock, state.blocks, blockRefs);
@@ -184,6 +207,54 @@ const ScreenplayEditor: React.FC = () => {
   useEffect(() => {
     setHasChanges(true);
   }, [state.blocks, setHasChanges]);
+
+  // Enhanced focus management for active block changes (with suggestion awareness)
+  useEffect(() => {
+    if (state.activeBlock && blockRefs.current[state.activeBlock] && !isProcessingSuggestion) {
+      // Use a longer delay to ensure DOM is fully updated after state changes
+      const timeoutId = setTimeout(() => {
+        if (!state.activeBlock || isProcessingSuggestion) return; // Additional checks
+        
+        const activeElement = blockRefs.current[state.activeBlock];
+        if (activeElement) {
+          // Check if this is a newly created action block (empty content)
+          const activeBlockData = state.blocks.find(b => b.id === state.activeBlock);
+          if (activeBlockData && activeBlockData.type === 'action' && activeBlockData.content === '') {
+            console.log(`Focusing newly created action block: ${state.activeBlock}`);
+            
+            // Enhanced focus with cursor positioning
+            activeElement.focus();
+            
+            // Ensure cursor is positioned at the start
+            setTimeout(() => {
+              const selection = window.getSelection();
+              if (selection && activeElement) {
+                const range = document.createRange();
+                
+                // Ensure there's a text node to work with
+                if (!activeElement.firstChild) {
+                  const textNode = document.createTextNode('');
+                  activeElement.appendChild(textNode);
+                }
+                
+                let textNode = activeElement.firstChild;
+                if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                  range.setStart(textNode, 0);
+                  range.setEnd(textNode, 0);
+                  selection.removeAllRanges();
+                  selection.addRange(range);
+                  
+                  console.log(`Cursor positioned at start of action block: ${state.activeBlock}`);
+                }
+              }
+            }, 50);
+          }
+        }
+      }, 150); // Longer delay to ensure React has finished rendering
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [state.activeBlock, state.blocks, isProcessingSuggestion]);
 
   useEffect(() => {
     const fetchScreenplayContent = async () => {
@@ -289,13 +360,8 @@ const ScreenplayEditor: React.FC = () => {
         console.log(`Loaded ${loadedCharacters.length} unique characters:`, loadedCharacters);
         setCharacters(loadedCharacters);
 
-        // Fetch unique scene headings
-        const sceneHeadingsRef = collection(db, `projects/${projectId}/unique_scene_headings`);
-        const sceneHeadingsQuery = query(sceneHeadingsRef, orderBy('count', 'desc'), limit(20));
-        const sceneHeadingsSnap = await getDocs(sceneHeadingsQuery);
-        const loadedSceneHeadings = sceneHeadingsSnap.docs.map(doc => doc.data() as UniqueSceneHeadingDocument);
-        console.log(`Loaded ${loadedSceneHeadings.length} unique scene headings`);
-        setUniqueSceneHeadings(loadedSceneHeadings);
+        // Scene headings are now managed by the useSceneHeadings hook
+        console.log(`Scene headings will be loaded by useSceneHeadings hook`);
 
         // Then try to load editor state (for UI state, not for blocks)
         const editorStateRef = doc(db, `projects/${projectId}/screenplays/${screenplayId}/editor/state`);
@@ -367,10 +433,7 @@ const ScreenplayEditor: React.FC = () => {
         setCharacters(location.state.characters);
       }
       
-      // Set unique scene headings if available
-      if (location.state?.uniqueSceneHeadings) {
-        setUniqueSceneHeadings(location.state.uniqueSceneHeadings);
-      }
+      // Scene headings are now managed by the centralized hook
       
       setDocumentTitle(screenplayData?.title || 'Untitled Screenplay');
       setLoading(false);
@@ -467,6 +530,9 @@ const ScreenplayEditor: React.FC = () => {
                     projectId={projectId}
                     screenplayId={screenplayId}
                     projectUniqueSceneHeadings={uniqueSceneHeadings}
+                    onEnterAction={createActionBlockAfterSceneHeading}
+                    isProcessingSuggestion={isProcessingSuggestion}
+                    setIsProcessingSuggestion={setIsProcessingSuggestion}
                   />
                 ))}
               </div>

@@ -5,11 +5,11 @@ import {
   detectFormat, 
   getNextBlockType, 
   updateBlockNumbers,
-  createSceneHeadingHash // Import the hash utility
+  createSceneHeadingHash
 } from '../utils/blockUtils';
 import { v4 as uuidv4 } from 'uuid';
-import { doc, getDoc, setDoc, updateDoc, collection, arrayUnion, serverTimestamp, writeBatch, query, orderBy, getDocs } from 'firebase/firestore'; // Added writeBatch to imports
-import { db } from '../lib/firebase'; // Import db instance
+import { doc, getDoc, setDoc, updateDoc, collection, arrayUnion, serverTimestamp, writeBatch, query, orderBy, getDocs } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface MultiBlockSelection {
   startBlock: string | null;
@@ -19,7 +19,7 @@ interface MultiBlockSelection {
   selectedText: string;
 }
 
-export const useBlockHandlers = (
+export const useBlockHandlersImproved = (
   state: {
     blocks: Block[];
     activeBlock: string | null;
@@ -51,6 +51,116 @@ export const useBlockHandlers = (
     endOffset: 0,
     selectedText: ''
   });
+
+  // Enhanced focus management utility
+  const setFocusWithRetry = useCallback((blockId: string, cursorPosition: 'start' | 'end' | number = 'start', maxRetries = 3) => {
+    let retryCount = 0;
+    
+    const attemptFocus = () => {
+      const el = blockRefs.current[blockId];
+      if (!el) {
+        if (retryCount < maxRetries) {
+          retryCount++;
+          setTimeout(attemptFocus, 10 * retryCount); // Exponential backoff
+        }
+        return;
+      }
+
+      // Ensure element is focusable
+      if (!el.hasAttribute('contenteditable')) {
+        el.setAttribute('contenteditable', 'true');
+      }
+
+      // Focus the element
+      el.focus();
+
+      // Set cursor position with enhanced reliability
+      try {
+        const range = document.createRange();
+        const selection = window.getSelection();
+        
+        if (!selection) return;
+
+        // Ensure there's content to work with
+        if (!el.firstChild) {
+          const textNode = document.createTextNode('');
+          el.appendChild(textNode);
+        }
+
+        let textNode = el.firstChild;
+        
+        // Find the first text node if the first child isn't a text node
+        while (textNode && textNode.nodeType !== Node.TEXT_NODE) {
+          textNode = textNode.firstChild || textNode.nextSibling;
+        }
+
+        if (!textNode) {
+          // Create a text node if none exists
+          textNode = document.createTextNode('');
+          el.appendChild(textNode);
+        }
+
+        const textContent = textNode.textContent || '';
+        let position = 0;
+
+        if (cursorPosition === 'end') {
+          position = textContent.length;
+        } else if (cursorPosition === 'start') {
+          position = 0;
+        } else if (typeof cursorPosition === 'number') {
+          position = Math.min(cursorPosition, textContent.length);
+        }
+
+        range.setStart(textNode, position);
+        range.setEnd(textNode, position);
+        
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        // Verify focus was successful
+        if (document.activeElement !== el && retryCount < maxRetries) {
+          retryCount++;
+          setTimeout(attemptFocus, 10 * retryCount);
+        }
+      } catch (error) {
+        console.error('Error setting cursor position:', error);
+        // Fallback: just focus the element
+        el.focus();
+      }
+    };
+
+    // Use requestAnimationFrame for better timing
+    requestAnimationFrame(attemptFocus);
+  }, [blockRefs]);
+
+  // Enhanced action block creation after scene heading
+  const createActionBlockAfterSceneHeading = useCallback((sceneHeadingBlockId: string) => {
+    const currentIndex = state.blocks.findIndex(b => b.id === sceneHeadingBlockId);
+    if (currentIndex === -1) return null;
+
+    const actionBlockId = `action-${uuidv4()}`;
+    const actionBlock: Block = {
+      id: actionBlockId,
+      type: 'action',
+      content: '',
+    };
+
+    const updatedBlocks = [...state.blocks];
+    updatedBlocks.splice(currentIndex + 1, 0, actionBlock);
+    
+    updateBlocks(updateBlockNumbers(updatedBlocks));
+    
+    if (setHasChanges) {
+      setHasChanges(true);
+    }
+
+    // Enhanced focus management for action block
+    setTimeout(() => {
+      setFocusWithRetry(actionBlockId, 'start');
+    }, 50); // Slightly longer delay for scene heading processing
+
+    return actionBlockId;
+  }, [state.blocks, updateBlocks, setHasChanges, setFocusWithRetry]);
 
   // Find Block ID from a DOM node
   const findBlockIdFromNode = (node: Node | null): string | null => {
@@ -120,11 +230,7 @@ export const useBlockHandlers = (
         }
 
         setTimeout(() => {
-            const el = blockRefs.current[newBlock.id];
-            if (el) {
-                el.focus();
-                el.dispatchEvent(new FocusEvent('focus'));
-            }
+            setFocusWithRetry(newBlock.id, 'start');
         }, 0);
         return newBlock.id;
     }
@@ -162,19 +268,7 @@ export const useBlockHandlers = (
             }
 
             setTimeout(() => {
-                const el = blockRefs.current[newBlock.id];
-                if (el) {
-                    el.focus();
-                    const range = document.createRange();
-                    const textNode = el.firstChild || el;
-                    range.setStart(textNode, 0);
-                    range.collapse(true);
-                    const selection = window.getSelection();
-                    if (selection) {
-                        selection.removeAllRanges();
-                        selection.addRange(range);
-                    }
-                }
+                setFocusWithRetry(newBlock.id, 'start');
             }, 0);
             return newBlock.id;
         }
@@ -202,19 +296,7 @@ export const useBlockHandlers = (
             }
 
             setTimeout(() => {
-                const el = blockRefs.current[newBlock.id];
-                if (el) {
-                    el.focus();
-                    const range = document.createRange();
-                    const textNode = el.firstChild || el;
-                    range.setStart(textNode, 0);
-                    range.collapse(true);
-                    const selection = window.getSelection();
-                    if (selection) {
-                        selection.removeAllRanges();
-                        selection.addRange(range);
-                    }
-                }
+                setFocusWithRetry(newBlock.id, 'start');
             }, 0);
             return newBlock.id;
         } else {
@@ -239,19 +321,7 @@ export const useBlockHandlers = (
             }
 
             setTimeout(() => {
-                const el = blockRefs.current[newBlock.id];
-                if (el) {
-                    el.focus();
-                    const range = document.createRange();
-                    const textNode = el.firstChild || el;
-                    range.setStart(textNode, 0);
-                    range.collapse(true);
-                    const selection = window.getSelection();
-                    if (selection) {
-                        selection.removeAllRanges();
-                        selection.addRange(range);
-                    }
-                }
+                setFocusWithRetry(newBlock.id, 'start');
             }, 0);
             return newBlock.id;
         }
@@ -287,19 +357,7 @@ export const useBlockHandlers = (
         }
 
         setTimeout(() => {
-            const el = blockRefs.current[newBlock.id];
-            if (el) {
-                el.focus();
-                const range = document.createRange();
-                const textNode = el.firstChild || el;
-                range.setStart(textNode, 0);
-                range.collapse(true);
-                const selection = window.getSelection();
-                if (selection) {
-                    selection.removeAllRanges();
-                    selection.addRange(range);
-                }
-            }
+            setFocusWithRetry(newBlock.id, 'start');
         }, 0);
         return newBlock.id;
     }
@@ -334,19 +392,7 @@ export const useBlockHandlers = (
       }
 
       setTimeout(() => {
-          const el = blockRefs.current[newBlock.id];
-          if (el) {
-              el.focus();
-              const range = document.createRange();
-              const textNode = el.firstChild || el;
-              range.setStart(textNode, 0);
-              range.collapse(true);
-              const selection = window.getSelection();
-              if (selection) {
-                  selection.removeAllRanges();
-                  selection.addRange(range);
-              }
-          }
+          setFocusWithRetry(newBlock.id, 'start');
       }, 0);
       return newBlock.id;
     }
@@ -377,64 +423,27 @@ export const useBlockHandlers = (
       setHasChanges(true);
     }
 
+    // Enhanced focus management based on block type
     setTimeout(() => {
-      const el = blockRefs.current[newBlock.id];
-      if (el) {
-        el.focus();
+      if (newBlock.type === 'scene-heading') {
+        // For scene headings, set cursor to end and trigger suggestions
+        setFocusWithRetry(newBlock.id, 'end');
         
-        if (newBlock.type === 'scene-heading') {
-          // ========== SCENE HEADING CURSOR FIX ==========
-          // Set cursor to end of text instead of beginning
-          const range = document.createRange();
-          const textNode = el.firstChild || el;
-          const textLength = textAfter.length;
-          range.setStart(textNode, textLength);
-          range.collapse(true);
-          const selection = window.getSelection();
-          if (selection) {
-            selection.removeAllRanges();
-            selection.addRange(range);
+        // Trigger focus event for scene heading suggestions after a brief delay
+        setTimeout(() => {
+          const el = blockRefs.current[newBlock.id];
+          if (el) {
+            el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
           }
-          // Trigger focus event for scene heading suggestions
-          el.dispatchEvent(new FocusEvent('focus'));
-          // ========== END SCENE HEADING CURSOR FIX ==========
-        } else {
-          // ========== ACTION BLOCK CURSOR FIX ==========
-          // For action blocks and other types, ensure proper cursor positioning
-          const range = document.createRange();
-          
-          // Ensure there's a text node to work with
-          if (!el.firstChild) {
-            const textNode = document.createTextNode(textAfter || '');
-            el.appendChild(textNode);
-          }
-          
-          const textNode = el.firstChild;
-          if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-            // Set cursor at the beginning for action blocks
-            range.setStart(textNode, 0);
-            range.collapse(true);
-          } else {
-            // Fallback: set cursor at the beginning of the element
-            range.setStart(el, 0);
-            range.collapse(true);
-          }
-          
-          const selection = window.getSelection();
-          if (selection) {
-            selection.removeAllRanges();
-            selection.addRange(range);
-          }
-          
-          // Ensure the element maintains focus
-          el.focus();
-          // ========== END ACTION BLOCK CURSOR FIX ==========
-        }
+        }, 100);
+      } else {
+        // For other block types (especially action blocks), set cursor to start
+        setFocusWithRetry(newBlock.id, 'start');
       }
     }, 0);
 
     return newBlock.id;
-  }, [state.blocks, addToHistory, updateBlocks, setHasChanges]);
+  }, [state.blocks, addToHistory, updateBlocks, setHasChanges, setFocusWithRetry, blockRefs]);
 
   const handleFormatChange = useCallback((type: string) => {
     if (state.activeBlock) {
@@ -722,22 +731,10 @@ export const useBlockHandlers = (
     
     if (blockToFocusId) {
       setTimeout(() => {
-        const el = blockRefs.current[blockToFocusId!];
-        if (el) {
-          el.focus();
-          const range = document.createRange();
-          const textNode = el.firstChild || el;
-          range.setStart(textNode, 0);
-          range.collapse(true);
-          const selection = window.getSelection();
-          if (selection) {
-            selection.removeAllRanges();
-            selection.addRange(range);
-          }
-        }
+        setFocusWithRetry(blockToFocusId!, 'start');
       }, 0);
     }
-  }, [state.blocks, addToHistory, updateBlocks, setHasChanges, projectId, screenplayId, onSceneHeadingUpdate]);
+  }, [state.blocks, addToHistory, updateBlocks, setHasChanges, projectId, screenplayId, onSceneHeadingUpdate, setFocusWithRetry]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>, blockId: string) => {
     const el = e.target as HTMLDivElement;
@@ -799,45 +796,15 @@ export const useBlockHandlers = (
         addToHistory(state.blocks);
         
         const previousBlock = state.blocks[currentIndex - 1];
-        const prevEl = blockRefs.current[previousBlock.id];
-
         const updatedBlocks = state.blocks.filter((b) => b.id !== blockId);
         updateBlocks(updatedBlocks);
 
-        if (prevEl) {
-          prevEl.focus();
-          const range = document.createRange();
-          
-          if (!prevEl.firstChild) {
-            prevEl.textContent = '';
-          }
-          
-          const textNode = prevEl.firstChild || prevEl;
-          const position = previousBlock.content.length;
-          
-          try {
-            range.setStart(textNode, position);
-            range.setEnd(textNode, position);
-            
-            const selection = window.getSelection();
-            if (selection) {
-              selection.removeAllRanges();
-              selection.addRange(range);
-            }
-          } catch (err) {
-            range.selectNodeContents(prevEl);
-            range.collapse(false);
-            
-            const selection = window.getSelection();
-            if (selection) {
-              selection.removeAllRanges();
-              selection.addRange(range);
-            }
-          }
-        }
+        setTimeout(() => {
+          setFocusWithRetry(previousBlock.id, 'end');
+        }, 0);
       }
     }
-  }, [state.blocks, handleEnterKey, handleFormatChange, addToHistory, updateBlocks, setHasChanges]);
+  }, [state.blocks, handleEnterKey, handleFormatChange, addToHistory, updateBlocks, setHasChanges, setFocusWithRetry]);
 
   const handleCopyMultiBlockSelection = useCallback(() => {
     if (!multiBlockSelection.current.startBlock || 

@@ -81,25 +81,38 @@ const ElementSuggestions: React.FC<ElementSuggestionsProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isFromActiveBlock = target.getAttribute('data-block-id') === blockId;
+      
+      // Only handle if this is from the active block
+      if (!isFromActiveBlock) return;
+
       if (e.key === 'ArrowDown') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(prev => (prev + 1) % filteredElements.length);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(prev => (prev - 1 + filteredElements.length) % filteredElements.length);
       } else if (e.key === 'Enter') {
         e.preventDefault();
+        e.stopPropagation();
         if (filteredElements.length > 0) {
           onSelect(filteredElements[selectedIndex].name);
+          onClose();
         }
       } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
         onClose();
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, onSelect, selectedIndex, filteredElements]);
+    // Use capture phase to ensure we get the event before other handlers
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [blockId, onClose, onSelect, selectedIndex, filteredElements]);
 
   // Close when clicking outside
   useEffect(() => {

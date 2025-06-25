@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { BlockComponentProps, CharacterDocument, ElementDocument } from '../types';
 import { getBlockStyle, getBlockMargin } from '../utils/styleUtils';
-import SceneHeadingSuggestionsOptimized from './SceneHeadingSuggestionsOptimized';
+import SceneHeadingSuggestionsImproved from './SceneHeadingSuggestionsImproved';
 import TransitionSuggestions from './TransitionSuggestions';
 import ShotTypeSuggestions from './ShotTypeSuggestions';
 import CharacterSuggestions from './CharacterSuggestions';
@@ -13,9 +13,12 @@ interface ExtendedBlockComponentProps extends BlockComponentProps {
   projectId?: string;
   screenplayId?: string;
   projectUniqueSceneHeadings?: any[];
+  onEnterAction?: () => void;
+  isProcessingSuggestion?: boolean;
+  setIsProcessingSuggestion?: (processing: boolean) => void;
 }
 
-const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
+const BlockComponentImproved: React.FC<ExtendedBlockComponentProps> = ({
   block,
   isDarkMode,
   onContentChange,
@@ -32,62 +35,45 @@ const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
   projectId,
   screenplayId,
   projectUniqueSceneHeadings = [],
+  onEnterAction,
+  isProcessingSuggestion,
+  setIsProcessingSuggestion,
 }) => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestionsPosition, setSuggestionsPosition] = useState<{ x: number; y: number } | null>(null);
   const [suggestionType, setSuggestionType] = useState<'scene' | 'transition' | 'shot' | 'character' | 'element' | null>(null);
   const [currentInput, setCurrentInput] = useState('');
   const [contentElement, setContentElement] = useState<HTMLDivElement | null>(null);
-  const [recentlySavedHeadings, setRecentlySavedHeadings] = useState<Set<string>>(new Set());
+  const [isProcessingSelection, setIsProcessingSelection] = useState(false);
   const ignoreBlurRef = useRef(false);
-  const suggestionClosingRef = useRef(false); // เพิ่ม ref เพื่อป้องกันการเปิด suggestions ใหม่ทันทีหลังปิด
+  const suggestionClosingRef = useRef(false);
 
-  // Track when scene headings are updated to remove NEW badge
-  useEffect(() => {
-    if (block.type === 'scene-heading' && block.content.trim()) {
-      const trimmedContent = block.content.trim().toUpperCase();
-      
-      // Check if this scene heading now exists in the project's unique scene headings
-      const nowExistsInProject = projectUniqueSceneHeadings.some(heading => 
-        heading.text.toUpperCase().trim() === trimmedContent
-      );
-      
-      // If it now exists and wasn't marked as recently saved, mark it as recently saved
-      if (nowExistsInProject && !recentlySavedHeadings.has(trimmedContent)) {
-        setRecentlySavedHeadings(prev => new Set([...prev, trimmedContent]));
-        
-        // Clear the recently saved flag after a delay to allow for UI updates
-        setTimeout(() => {
-          setRecentlySavedHeadings(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(trimmedContent);
-            return newSet;
-          });
-        }, 2000); // Clear after 2 seconds
-      }
+  // Enhanced action block creation after scene heading completion
+  const handleEnterActionCreation = useCallback(() => {
+    if (onEnterAction) {
+      onEnterAction();
     }
-  }, [block.type, block.content, projectUniqueSceneHeadings, recentlySavedHeadings]);
+  }, [onEnterAction]);
 
-  // Function to check if the current scene heading is new - NO useCallback to avoid stale closures
-  const isNewSceneHeading = () => {
+  // Function to check if the current scene heading is new
+  const isNewSceneHeading = useCallback(() => {
     if (block.type !== 'scene-heading') return false;
     
     const trimmedInput = block.content.trim();
     if (!trimmedInput) return false;
     
-    // Use the EXACT same logic as SceneHeadingSuggestions component
     const inputUpper = trimmedInput.toUpperCase();
     
-    // Default scene type suggestions (same as dropdown)
+    // Default scene type suggestions
     const defaultSceneTypes = [
-      { label: 'INT. ' },
-      { label: 'EXT. ' },
-      { label: 'INT./EXT. ' },
-      { label: 'EXT./INT. ' },
-      { label: 'I/E. ' }
+      { label: 'INT.' },
+      { label: 'EXT.' },
+      { label: 'INT./EXT.' },
+      { label: 'EXT./INT.' },
+      { label: 'I/E.' }
     ];
     
-    // Create suggestions array like dropdown does - include ALL existing scene headings
+    // Create suggestions array like dropdown does
     const allLabelsUpper = new Set();
     
     // Add default scene types
@@ -109,31 +95,14 @@ const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
     // Check if it's only a prefix in defaults
     const isOnlyPrefixInDefaults = defaultSceneTypes.some(d => d.label.toUpperCase().trim() === inputUpper);
     
-    // EXACT same condition as dropdown: show NEW badge if input exists, no exact match, has valid prefix, and not just a default prefix
+    // Show NEW badge if input exists, no exact match, has valid prefix, and not just a default prefix
     const shouldShowNew = trimmedInput && !exactMatch && hasValidPrefix && !isOnlyPrefixInDefaults;
     
-    // Show when suggestions are active OR when the block is active (to match dropdown timing)
-    const result = shouldShowNew && (showSuggestions || isActive);
-    
-    // Debug logging
-    console.log('Badge Debug:', {
-      blockId: block.id,
-      trimmedInput,
-      inputUpper,
-      exactMatch,
-      hasValidPrefix,
-      isOnlyPrefixInDefaults,
-      shouldShowNew,
-      showSuggestions,
-      isActive,
-      result
-    });
-    
-    return result;
-  };
+    // Show when suggestions are active OR when the block is active
+    return shouldShowNew && (showSuggestions || isActive);
+  }, [block.type, block.content, projectUniqueSceneHeadings, showSuggestions, isActive]);
 
-
-  const updateSuggestionsPosition = () => {
+  const updateSuggestionsPosition = useCallback(() => {
     if (!contentElement) return;
 
     const blockRect = contentElement.getBoundingClientRect();
@@ -142,21 +111,22 @@ const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
       x: 0,
       y: blockRect.height
     });
-  };
+  }, [contentElement]);
 
-  // ฟังก์ชันปิด suggestions แบบ clean
+  // Enhanced suggestions closing
   const closeSuggestions = useCallback(() => {
     setShowSuggestions(false);
     setSuggestionType(null);
     setSuggestionsPosition(null);
     suggestionClosingRef.current = true;
     
-    // รีเซ็ต flag หลังจากหน่วงเวลาสั้นๆ
+    // Reset flag after short delay
     setTimeout(() => {
       suggestionClosingRef.current = false;
     }, 100);
   }, []);
 
+  // Enhanced suggestions management based on block state
   useEffect(() => {
     if (isActive && !suggestionClosingRef.current) {
       const content = block.content;
@@ -185,12 +155,12 @@ const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
     } else {
       setShowSuggestions(false);
     }
-  }, [block.type, block.content, isActive]);
+  }, [block.type, block.content, isActive, updateSuggestionsPosition]);
 
-  const handleFocus = () => {
+  const handleFocus = useCallback(() => {
     onFocus(block.id);
     
-    // ไม่เปิด suggestions ใหม่ถ้าเพิ่งปิดไป
+    // Don't open suggestions if just closed
     if (suggestionClosingRef.current) return;
     
     if (block.type === 'scene-heading') {
@@ -212,10 +182,20 @@ const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
       setCurrentInput(block.content);
       setShowSuggestions(true);
     }
-  };
+  }, [onFocus, block.id, block.type, block.content, updateSuggestionsPosition]);
 
+  // Enhanced suggestion selection with processing state to prevent multiple events
   const handleSuggestionSelect = useCallback((value: string) => {
+    // Prevent multiple selections if already processing
+    if (isProcessingSelection) return;
+    
     console.log(`Selected suggestion: "${value}" for block type: ${block.type}`);
+    
+    // Set processing state immediately (both local and global)
+    setIsProcessingSelection(true);
+    if (setIsProcessingSuggestion) {
+      setIsProcessingSuggestion(true);
+    }
     
     // Check if this is a scene heading prefix selection
     const isSceneTypePrefix = block.type === 'scene-heading' && 
@@ -226,80 +206,109 @@ const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
     
     // For prefix-only selections, keep suggestions open and maintain focus
     if (isSceneTypePrefix) {
-      // Don't close suggestions for prefix-only selections
-      // Just update the current input and maintain focus
       setCurrentInput(value);
       
-      // Set focus and cursor position without closing suggestions
-      setTimeout(() => {
+      // Enhanced focus management for prefix selections
+      requestAnimationFrame(() => {
         const el = blockRefs.current[block.id];
         if (el) {
           el.focus();
           
-          // Place cursor at the end of the text
+          // Place cursor at the end of the text with improved reliability
           const range = document.createRange();
           const selection = window.getSelection();
           
-          if (el.firstChild && el.firstChild.nodeType === Node.TEXT_NODE) {
-            const textLength = el.firstChild.textContent?.length || 0;
-            range.setStart(el.firstChild, textLength);
-            range.setEnd(el.firstChild, textLength);
-          } else {
-            // Create text node if it doesn't exist
-            const textNode = document.createTextNode(value);
-            el.appendChild(textNode);
-            range.setStart(textNode, value.length);
-            range.setEnd(textNode, value.length);
-          }
-          
           if (selection) {
+            let textNode = el.firstChild;
+            
+            // Ensure we have a text node
+            if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+              textNode = document.createTextNode(value);
+              el.innerHTML = '';
+              el.appendChild(textNode);
+            }
+            
+            const textLength = textNode.textContent?.length || 0;
+            range.setStart(textNode, textLength);
+            range.setEnd(textNode, textLength);
+            
             selection.removeAllRanges();
             selection.addRange(range);
           }
         }
-      }, 0);
+        
+        // Reset processing state after prefix selection
+        setIsProcessingSelection(false);
+        if (setIsProcessingSuggestion) {
+          setIsProcessingSuggestion(false);
+        }
+      });
       
       return; // Don't close suggestions
     }
     
-    // For complete selections, close suggestions and set focus
+    // For complete selections, close suggestions immediately
     closeSuggestions();
     
-    // Set focus and cursor position with simplified approach
-    setTimeout(() => {
+    // Enhanced focus management for complete selections
+    requestAnimationFrame(() => {
       const el = blockRefs.current[block.id];
       if (el) {
+        // Update the element content first to ensure it matches the selected value
+        el.textContent = value;
         el.focus();
         
-        // Use a simpler approach for cursor positioning
-        const selection = window.getSelection();
-        if (selection) {
-          selection.removeAllRanges();
-          const range = document.createRange();
-          
-          // Find the text node or create one
-          let textNode = el.firstChild;
-          if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
-            textNode = document.createTextNode(value);
-            el.innerHTML = '';
-            el.appendChild(textNode);
+        // Set cursor at the end for complete scene headings with improved reliability
+        setTimeout(() => {
+          const selection = window.getSelection();
+          if (selection && el) {
+            selection.removeAllRanges();
+            const range = document.createRange();
+            
+            // Ensure we have the correct text content
+            if (el.textContent !== value) {
+              el.textContent = value;
+            }
+            
+            let textNode = el.firstChild;
+            if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+              textNode = document.createTextNode(value);
+              el.innerHTML = '';
+              el.appendChild(textNode);
+            }
+            
+            const textLength = textNode.textContent?.length || 0;
+            range.setStart(textNode, textLength);
+            range.setEnd(textNode, textLength);
+            selection.addRange(range);
+            
+            console.log(`Cursor positioned at end of scene heading: "${value}" (length: ${textLength})`);
           }
-          
-          // Set cursor at the end
-          const textLength = textNode.textContent?.length || 0;
-          range.setStart(textNode, textLength);
-          range.setEnd(textNode, textLength);
-          selection.addRange(range);
-        }
+        }, 10);
       }
-    }, 10); // Slightly longer delay for stability
-  }, [block.id, block.type, onContentChange, blockRefs, closeSuggestions]);
+      
+      // Reset processing state after complete selection
+      setIsProcessingSelection(false);
+      if (setIsProcessingSuggestion) {
+        setIsProcessingSuggestion(false);
+      }
+    });
+  }, [block.id, block.type, onContentChange, blockRefs, closeSuggestions, handleEnterActionCreation, isProcessingSelection]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    // If suggestions are showing and this is a navigation/selection key, let suggestions handle it
+  // Enhanced keyboard handling that properly prevents conflicts with suggestions
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    // If processing a selection, block all Enter events
+    if (isProcessingSelection && e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    
+    // If suggestions are showing and this is a navigation/selection key, prevent parent handling
     if (showSuggestions && ['ArrowUp', 'ArrowDown', 'Enter', 'Escape'].includes(e.key)) {
-      // Don't prevent default here - let the suggestions component handle it
-      // The suggestions component will prevent default and stop propagation
+      // Stop the event from bubbling to parent components
+      e.stopPropagation();
+      // Don't call onKeyDown for these keys when suggestions are active
       return;
     }
     
@@ -308,20 +317,20 @@ const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
     
     // Update current input for suggestion filtering
     if (showSuggestions) {
-      // Use setTimeout to get the updated content after the key event
       setTimeout(() => {
         const content = e.currentTarget.textContent || '';
         setCurrentInput(content);
         updateSuggestionsPosition();
       }, 0);
     }
-  };
+  }, [showSuggestions, onKeyDown, block.id, updateSuggestionsPosition, isProcessingSelection]);
 
-  const handleInput = () => {
+  // Enhanced input handling
+  const handleInput = useCallback(() => {
     const content = contentElement?.textContent || '';
     setCurrentInput(content);
     
-    // ไม่เปิด suggestions ใหม่ถ้าเพิ่งปิดไป
+    // Don't open suggestions if just closed
     if (suggestionClosingRef.current) return;
     
     if (block.type === 'scene-heading') {
@@ -343,24 +352,26 @@ const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
     } else {
       setShowSuggestions(false);
     }
-  };
+  }, [contentElement, block.type, updateSuggestionsPosition]);
 
-  const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+  // Enhanced blur handling
+  const handleBlur = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
     if (ignoreBlurRef.current) {
       return;
     }
+    
     const relatedTarget = e.relatedTarget as HTMLElement;
-    if (!relatedTarget?.closest('.scene-heading-suggestions, .scene-heading-suggestions-optimized, .transition-suggestions, .shot-type-suggestions, .character-suggestions, .element-suggestions')) {
+    if (!relatedTarget?.closest('.scene-heading-suggestions-improved, .transition-suggestions, .shot-type-suggestions, .character-suggestions, .element-suggestions')) {
       onContentChange(block.id, e.currentTarget.textContent || '');
       closeSuggestions();
     }
-  };
+  }, [onContentChange, block.id, closeSuggestions]);
 
-  const handleDoubleClickInternal = (e: React.MouseEvent) => {
+  const handleDoubleClickInternal = useCallback((e: React.MouseEvent) => {
     if (onDoubleClick) {
       onDoubleClick(block.id, e);
     }
-  };
+  }, [onDoubleClick, block.id]);
 
   return (
     <div 
@@ -431,22 +442,20 @@ const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
         </div>
       )}
       
-      {/* NEW badge for new scene headings */}
+      {/* Enhanced NEW badge for new scene headings */}
       {isNewSceneHeading() && (
         <div className="absolute right-2 top-1/2 -translate-y-1/2 z-10">
-          <span className="px-2 py-0.5 bg-green-500 text-white text-xs font-semibold rounded-full shadow-sm">
+          <span className="px-2 py-0.5 bg-green-500 text-white text-xs font-semibold rounded-full shadow-sm animate-pulse">
             NEW
           </span>
         </div>
       )}
       
-      
-      
-      {/* Suggestions based on block type */}
+      {/* Enhanced suggestions based on block type */}
       {showSuggestions && suggestionsPosition && (
         <>
           {suggestionType === 'scene' && (
-            <SceneHeadingSuggestionsOptimized
+            <SceneHeadingSuggestionsImproved
               blockId={block.id}
               onSelect={handleSuggestionSelect}
               position={suggestionsPosition}
@@ -454,6 +463,7 @@ const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
               projectId={projectId}
               screenplayId={screenplayId}
               currentInput={currentInput}
+              onEnterAction={handleEnterActionCreation}
             />
           )}
           
@@ -503,4 +513,4 @@ const BlockComponent: React.FC<ExtendedBlockComponentProps> = ({
   );
 };
 
-export default BlockComponent;
+export default BlockComponentImproved;

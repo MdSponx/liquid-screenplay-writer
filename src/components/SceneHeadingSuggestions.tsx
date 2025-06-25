@@ -420,28 +420,35 @@ const SceneHeadingSuggestions: React.FC<SceneHeadingSuggestionsProps> = ({
     };
   }, [currentInput, allUniqueSceneHeadings, projectId, fetchUniqueSceneHeadings, t]);
 
+  // Helper function to check if text is a prefix-only entry
+  const isPrefixOnly = useCallback((text: string): boolean => {
+    const trimmedText = text.trim().toUpperCase();
+    const prefixPatterns = [
+      'INT.',
+      'EXT.',
+      'INT./EXT.',
+      'EXT./INT.',
+      'I/E.'
+    ];
+    return prefixPatterns.includes(trimmedText);
+  }, []);
+
   // Handle selection of a scene heading - improved flow with prefix detection
   const handleSelectSuggestion = useCallback(async (suggestion: string) => {
     const trimmedSuggestion = suggestion.trim();
     
     // Check if this is just a prefix selection (INT., EXT., etc.)
-    const isPrefixOnly = defaultSceneTypes.some(type => 
-      type.label.trim() === trimmedSuggestion
-    );
+    const isPrefix = isPrefixOnly(trimmedSuggestion);
     
-    if (isPrefixOnly) {
+    if (isPrefix) {
       // For prefix-only selections, just insert the prefix and keep cursor active
       // Don't save to Firestore and don't close suggestions
       onSelect(trimmedSuggestion);
       return; // Don't close suggestions, let user continue typing
     }
     
-    // For complete scene headings, save to Firestore if it's not a default type
-    const isDefaultType = defaultSceneTypes.some(type => 
-      type.label.trim() === trimmedSuggestion
-    );
-    
-    if (!isDefaultType && trimmedSuggestion.length > 0) {
+    // For complete scene headings, save to Firestore if it's not empty and not prefix-only
+    if (trimmedSuggestion.length > 0 && !isPrefixOnly(trimmedSuggestion)) {
       await saveSceneHeading(trimmedSuggestion);
     }
     
@@ -450,7 +457,7 @@ const SceneHeadingSuggestions: React.FC<SceneHeadingSuggestionsProps> = ({
     
     // Close the suggestions dropdown
     onClose();
-  }, [saveSceneHeading, onSelect, onClose, defaultSceneTypes]);
+  }, [saveSceneHeading, onSelect, onClose, isPrefixOnly]);
 
   // Keyboard navigation with improved event handling
   useEffect(() => {

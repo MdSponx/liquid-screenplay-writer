@@ -162,27 +162,39 @@ const CharacterSuggestions: React.FC<CharacterSuggestionsProps> = ({
   // Handle keyboard navigation (ArrowUp, ArrowDown, Enter, Escape)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isFromActiveBlock = target.getAttribute('data-block-id') === blockId;
+      
+      // Only handle if this is from the active block
+      if (!isFromActiveBlock) return;
+
       if (e.key === 'ArrowDown') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(prev => (prev + 1) % filteredCharacters.length);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(prev => (prev - 1 + filteredCharacters.length) % filteredCharacters.length);
       } else if (e.key === 'Enter') {
         e.preventDefault();
+        e.stopPropagation();
         if (filteredCharacters.length > 0) {
           const selectedCharacter = filteredCharacters[selectedIndex];
           handleSelectCharacter(selectedCharacter);
         }
       } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
         onClose(); // Call onClose prop to close suggestions
         setNewCharacterAdded(null); // Clear message
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, selectedIndex, filteredCharacters, handleSelectCharacter]);
+    // Use capture phase to ensure we get the event before other handlers
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [blockId, onClose, selectedIndex, filteredCharacters, handleSelectCharacter]);
 
   // Handle click outside to close suggestions
   useEffect(() => {
