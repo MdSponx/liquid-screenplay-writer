@@ -6,7 +6,7 @@ A collaborative screenplay writing application built with React, TypeScript, and
 
 This project is configured to run on StackBlitz. You can open it directly in StackBlitz by clicking the button below:
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/YOUR_USERNAME/YOUR_REPO)
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/MdSponx/liquid-screenplay-writer)
 
 ### StackBlitz Configuration
 
